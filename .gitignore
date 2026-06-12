@@ -1,0 +1,12 @@
+# Ignorer les données lourdes
+data/
+outputs/
+__pycache__/
+*.tif
+*.mat
+*.csv
+*.xlsx
+
+# Fichiers temporaires
+*.log
+*.tmp
