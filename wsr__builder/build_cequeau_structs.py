@@ -217,6 +217,17 @@ def build_all():
         "superficieBassin": float(superficieCE.sum())
     }
 
+    param["tc"] = {
+        "tau_erosion": 0.009,
+        "tau_deposition": 1.50,
+        "shearscale": 0.04,
+        "shearexpo": 0.75,
+        "capacity_coeff": 0.08,
+        "Background_Supply": 0.05,
+        "Background_Wash": 15.00 # 1.5, 2.5
+    }
+
+
     savemat(os.path.join(out, "parameters.mat"), {"parameters": param})
 
     # Connectivité
