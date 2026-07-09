@@ -40,6 +40,8 @@ class MUSLEBuilder:
         self.NDVI_curve_annual = None
         self.ndvi_min = None
         self.ndvi_max = None
+        self.C_static = None
+        self.C_temporal = None
 
     # -------------------------------------------------------------
     # Helper: read raster
@@ -208,6 +210,8 @@ class MUSLEBuilder:
             NDVI_temporal[:, :, i] = NDVI_t
 
         self.NDVI_temporal = NDVI_temporal
+        self.C_temporal = NDVI_temporal
+        self.C_static = np.nanmean(NDVI_temporal, axis=2)
 
         print("✓ NDVI temporal cube computed")
 

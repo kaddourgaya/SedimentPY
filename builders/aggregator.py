@@ -43,11 +43,17 @@ class Aggregator:
 
         self.MUSLE_CE["CFRG_CE"] = self._area_weighted_mean(CFRG)
 
+        # 🔧 C_mean basé sur la même logique FAC-weighted
+        if self.musle.C_static is not None:
+            self.MUSLE_CE["C_mean"] = self._FAC_weighted_mean(self.musle.C_static)
+        else:
+            self.MUSLE_CE["C_mean"] = np.full(len(self.CE_pixel_idx), np.nan)
+
         print("✓ Aggregation complete")
         return self.MUSLE_CE
 
     # -------------------------------------------------------------
-    # FAC-WEIGHTED MEAN (for LS)
+    # FAC-WEIGHTED MEAN (for LS, C_static)
     # -------------------------------------------------------------
     def _FAC_weighted_mean(self, raster):
         FAC = self.spatial.FAC
@@ -56,13 +62,19 @@ class Aggregator:
         nCE = len(CE_idx)
         out = np.full(nCE, np.nan)
 
+        total_size = raster.size
+
         for i in range(nCE):
             idx = CE_idx[i]
             if len(idx) == 0:
                 continue
 
-            # Convertir indices aplatis → indices 2D
-            rows, cols = np.unravel_index(idx, raster.shape)
+            # 🔧 Ne garder que les indices valides pour ce raster
+            idx_valid = idx[idx < total_size]
+            if len(idx_valid) == 0:
+                continue
+
+            rows, cols = np.unravel_index(idx_valid, raster.shape)
 
             vals = raster[rows, cols]
             w = FAC[rows, cols]
@@ -81,13 +93,18 @@ class Aggregator:
         nCE = len(CE_idx)
         out = np.full(nCE, np.nan)
 
+        total_size = raster.size
+
         for i in range(nCE):
             idx = CE_idx[i]
             if len(idx) == 0:
                 continue
 
-            # Convertir indices aplatis → indices 2D
-            rows, cols = np.unravel_index(idx, raster.shape)
+            idx_valid = idx[idx < total_size]
+            if len(idx_valid) == 0:
+                continue
+
+            rows, cols = np.unravel_index(idx_valid, raster.shape)
 
             vals = raster[rows, cols]
             vals = vals[~np.isnan(vals)]
@@ -133,4 +150,3 @@ class Aggregator:
                 mode_frac[i] = counts[mode_idx] / len(vals)
 
         return P_eff, P_mode, mode_frac
-
