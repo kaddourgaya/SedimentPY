@@ -1,5 +1,7 @@
 import numpy as np
 import rasterio
+import pandas as pd
+import os
 
 class ConnectivityBuilder:
     def __init__(self, spatial, musle, params):
@@ -50,7 +52,7 @@ class ConnectivityBuilder:
 
         IC_min = np.nanmin(ICs)
         IC_max = np.nanmax(ICs)
-        self.IC_CE = (ICs - IC_min) / (IC_max - IC_min)
+        self.IC_CE = (ICs - IC_min) / (IC_max - IC_min + 1e-12)  # évite division par 0
 
         print("✓ IC_CE aggregated")
 
@@ -63,42 +65,75 @@ class ConnectivityBuilder:
         print("✓ SDR computed")
 
     # ---------------------------------------------------------
-    # CEQUEAU connectivity from bassinVersant.json
+    # CEQUEAU connectivity from data/results/*.csv
     # ---------------------------------------------------------
     def build_connectivity_from_bassin(self):
-        CE = self.spatial.CE
-        CP = self.spatial.CP
+        base_results = "data/results"
 
-        nCE = len(CE["CEid"])
-        nCP = len(CP["CPid"])
+        # --- carreauxEntiers (CE) ---
+        ce_df = pd.read_csv(os.path.join(base_results, "carreauxEntiers.csv"))
+        # colonnes typiques : CEid, x, y, ...
+        CE_ids = ce_df["CEid"].to_numpy()
+        nCE = len(CE_ids)
 
-        # CEtoCP
+        # --- carreauxPartiels (CP) ---
+        cp_df = pd.read_csv(os.path.join(base_results, "carreauxPartiels.csv"))
+        # colonnes typiques : CPid, idCE, pctSurface, ...
+        CP_ids = cp_df["CPid"].to_numpy()
+        idCE_cp = cp_df["idCE"].to_numpy()
+        nCP = len(CP_ids)
+
+        # --- CEtoCP : même logique que CEQUEAU ---
         CEtoCP = np.zeros(nCE, dtype=np.int32)
-        idCE_cp = [float(x) for x in CP["idCE"]]
-        cp_ids  = [float(x) for x in CP["CPid"]]
-
         for i in range(nCE):
-            CEid = float(CE["CEid"][i])
-            candidates = [j for j in range(nCP) if idCE_cp[j] == CEid]
-            CEtoCP[i] = candidates[0] + 1 if candidates else 0
+            CEid = CE_ids[i]
+            # tous les CP qui ont ce CEid
+            candidates = np.where(idCE_cp == CEid)[0]
+            if len(candidates) > 0:
+                # CEQUEAU utilise un CP principal (premier)
+                CEtoCP[i] = candidates[0] + 1  # CP index 1‑based
+            else:
+                CEtoCP[i] = 0
 
         self.CEtoCP = CEtoCP
-        print("✓ CEtoCP built")
+        print("✓ CEtoCP built from carreauxPartiels.csv")
 
-        # upstreamCPs
-        upstream = []
-        for i in range(nCP):
-            raw = CP["idCPsAmont"][i]
-            flat = []
-            for x in raw:
-                flat.append(int(x))
-            cleaned = [x for x in flat if x != 0]
-            upstream.append(np.array(cleaned, dtype=np.int32))
+        # --- upstreamCPs reconstruits depuis routing.csv ---
+        routing_path = os.path.join(base_results, "routing.csv")
+        r_df = pd.read_csv(routing_path)
 
-        self.upstreamCPs = upstream
-        print("✓ upstreamCPs built")
+        # colonne CPid
+        cp_ids = r_df["CPid"].to_numpy()
 
-        # routingOrder = CEtoCP (CEQUEAU expects CE→CP mapping)
-        self.routingOrder = self.CEtoCP.copy()
-        print("✓ routingOrder = CEtoCP (CEQUEAU-compatible)")
+        # colonne CP_amont (séparée par virgules)
+        upstreamCPs = []
+        for i in range(len(cp_ids)):
+            if "CP_amont" in r_df.columns:
+                raw = str(r_df.iloc[i]["CP_amont"])
+                if raw.strip() == "" or raw.lower() == "nan":
+                    upstreamCPs.append(np.array([], dtype=np.int32))
+                else:
+                    vals = [int(x) for x in raw.split(",") if x.strip().isdigit()]
+                    upstreamCPs.append(np.array(vals, dtype=np.int32))
+            else:
+                upstreamCPs.append(np.array([], dtype=np.int32))
 
+        self.upstreamCPs = upstreamCPs
+        print("✓ upstreamCPs rebuilt from routing.csv")
+
+        # --- routingOrder : soit routing.csv, soit CEtoCP ---
+        routing_path = os.path.join(base_results, "routing.csv")
+        if os.path.exists(routing_path):
+            r_df = pd.read_csv(routing_path)
+            # colonne typique : CPid ou ordre
+            if "CPid" in r_df.columns:
+                self.routingOrder = r_df["CPid"].to_numpy().astype(np.int32)
+            else:
+                self.routingOrder = r_df.iloc[:, 0].to_numpy().astype(np.int32)
+            print("✓ routingOrder loaded from routing.csv")
+        else:
+            # fallback : CEtoCP (comme tu faisais)
+            self.routingOrder = self.CEtoCP.copy()
+            print("✓ routingOrder = CEtoCP (fallback)")
+
+        print("✓ Connectivity (CEtoCP, upstreamCPs, routingOrder) built — CEQUEAU‑style")

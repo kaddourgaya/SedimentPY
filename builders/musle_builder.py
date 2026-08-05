@@ -144,8 +144,11 @@ class MUSLEBuilder:
     # CFRG
     # -------------------------------------------------------------
     def compute_CFRG_raw(self, cfrg_file):
-        coarse, R = self._read(f"{self.soil_dir}/{cfrg_file}")
-        self.CFRG_raw = coarse.astype(float)
+        coarse, _ = self._read(...)
+        rock = coarse.astype(float)
+        CFRG = np.exp(-CFRG_exp * rock)
+        CFRG[(CFRG < 0) | (CFRG > 1)] = np.nan
+        self.CFRG_raw = CFRG
         print("✓ CFRG raw loaded")
 
     # -------------------------------------------------------------

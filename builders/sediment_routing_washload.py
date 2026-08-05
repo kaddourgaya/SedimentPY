@@ -191,9 +191,8 @@ class SedimentRoutingWashload:
 
                 # Background washload (mg/L baseline → t/day)
                 if Q > 0:
-                    # same structure as MATLAB: factor * Q * 0.0864
-                    Wash_Factor = self.bg_wash * Q
-                    Background_Wash = Wash_Factor * Q * 0.0864
+                    Wash_Factor = self.bg_wash * (Q ** self.wash_expo)
+                    Background_Wash = Wash_Factor * 0.0864
                 else:
                     Background_Wash = 0.0
 
