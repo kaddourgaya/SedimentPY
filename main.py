@@ -32,24 +32,24 @@ def main():
     musle.load_P_factor()
     musle.load_CFRG_factor()
 
-    dates = [datetime(2020, 1, 1) + timedelta(days=i) for i in range(365)]
+    dates = [datetime(2023, 1, 1) + timedelta(days=i) for i in range(365)]
     musle.compute_C_factor_precompute("NDVI_2024_Landsat.tif", dates)
 
     ce_builder = CEPixelIndexBuilder(
         ce_shapefile="data/physiography/CE_fishnet.shp",
-        raster_path="data/physiography/FAC.tif"   # 🔧 grille alignée
+        raster_path="data/physiography/FAC.tif"
     )
     CE_pixel_idx = ce_builder.build()
 
     params = {
         "MUSLE": {
-            "C_alpha": 3.0,
-            "C_beta": 0.8,
-            "CFRG_exp": 0.1
+            "C_alpha": 1.0,
+            "C_beta": 1.0,
+            "CFRG_exp": 5.0
         },
         "SDR": {
-            "alpha": 5.0,
-            "beta": -2.0
+            "alpha": 1.0,
+            "beta": 1.0
         },
         "CE_pixel_idx": CE_pixel_idx
     }
@@ -57,7 +57,7 @@ def main():
     pdf = ParamDependentFactors(musle, params, CE_pixel_idx)
     C_struct = pdf.compute_C_factor()
 
-    C_temporal = C_struct["C_temporal"].astype(np.float64)   # [T, CE]
+    C_temporal = C_struct["C_temporal"].astype(np.float64)
     C_mean = np.nanmean(C_temporal, axis=0).astype(np.float64)
 
     conn = ConnectivityBuilder(spatial, musle, params)
@@ -66,39 +66,45 @@ def main():
     agg = Aggregator(spatial, musle, dates, CE_pixel_idx)
     MUSLE_CE = agg.aggregate()
 
-    routingOrder = conn.CEtoCP.astype(np.int32)
-
     # Nettoyage CFRG
     CFRG_clean = MUSLE_CE["CFRG_CE"].astype(np.float64)
     nan_mask = np.isnan(CFRG_clean)
-
-    print(f"\n=== CFRG_CE CLEANUP ===")
-    print(f"NaN détectés : {nan_mask.sum()}")
-
     if nan_mask.sum() > 0:
-        valid = CFRG_clean[~nan_mask]
-        min_valid = np.nanmin(valid)
-        CFRG_clean[nan_mask] = min_valid
+        CFRG_clean[nan_mask] = np.nanmin(CFRG_clean[~nan_mask])
 
-    print("Nettoyage CFRG terminé.")
-    print(f"min={CFRG_clean.min():.6f}  max={CFRG_clean.max():.6f}\n")
-
-    savemat("outputs/MUSLE_inputs.mat", {
+    MUSLE_CE_struct = {
         "LS_mean": MUSLE_CE["LS_mean"].astype(np.float64),
         "K_mean": MUSLE_CE["K_mean"].astype(np.float64),
         "P_mode": MUSLE_CE["P_mode"].astype(np.float64),
-        "CFRG_CE": CFRG_clean,
-        "C_static": C_mean.astype(np.float64),
-        "C_temporal": C_temporal.reshape(-1, order="C"),
-        "SDR": conn.SDR.astype(np.float64).reshape(-1, order="C"),
-        "IC_CE": conn.IC_CE.astype(np.float64),
-        "routingOrder": routingOrder
+        "CFRG_mean": CFRG_clean.astype(np.float64),
+        "C_mean": C_mean.astype(np.float64),
+        "C_temporal": C_temporal.astype(np.float64),
+        "SDR_CE": conn.SDR.astype(np.float64)
+    }
+
+    savemat("outputs/MUSLE_inputs.mat", {
+        "MUSLE_CE": MUSLE_CE_struct,
+        "CEtoCP": conn.CEtoCP.astype(np.int32)
     })
 
+    # upstreamCPs → cell array
+    nCP = len(conn.upstreamCPs)
+    upstream_cell = np.empty((nCP, 1), dtype=object)
+    for i in range(nCP):
+        upstream_cell[i, 0] = np.array(conn.upstreamCPs[i], dtype=np.int32)
+
+    # CE_CP_map → cell array
+    nCE = len(conn.CE_CP_map)
+    CE_CP_cell = np.empty((nCE, 1), dtype=object)
+    for i in range(nCE):
+        CE_CP_cell[i, 0] = np.array(conn.CE_CP_map[i], dtype=np.int32)
+
     savemat("outputs/Connectivity_for_CEQUEAU.mat", {
-        "routingOrder": routingOrder,
-        "upstreamCPs": np.array(conn.upstreamCPs, dtype=object),
-        "CEtoCP": conn.CEtoCP.astype(np.int32)
+        "routingOrder": conn.routingOrder.astype(np.int32),
+        "upstreamCPs": upstream_cell,
+        "CEtoCP": conn.CEtoCP.astype(np.int32),
+        "CE_CP_map": CE_CP_cell,
+        "CP_stream_node": conn.CP_stream_node.astype(np.int32)
     })
 
     print("\n=== PIPELINE COMPLETE — FILES SAVED ===\n")
